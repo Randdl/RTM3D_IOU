@@ -126,11 +126,12 @@ class Vertexes_Coor_IoULoss(nn.Module):
 
         loss = batch_poly_diou_loss(front, tg_front, a=0).sum() \
                + batch_poly_diou_loss(back, tg_back, a=0).sum()
-        loss = loss / (mask.sum() / 4 + 1e-4)
+        loss = loss / (mask.sum() / 4 + 1e-2)
 
         l1_loss = F.l1_loss(front, tg_front, size_average=False) \
                   + F.l1_loss(back, tg_back, size_average=False)
-        l1_loss = l1_loss / (mask.sum() * 32 + 1e-4)
+        l1_loss = l1_loss / (mask.sum() * 64 + 1e-2)
+        # print("iou:", loss, "; l1:", l1_loss)
         # print(loss)
         # print(l1_loss)
 

@@ -299,23 +299,23 @@ def batch_poly_iou(polys1, polys2):
 
     iou = ai / (a1 + a2 - ai + 1e-10)
 
-    outlier = torch.logical_or(torch.logical_or(iou > 1, iou < 0), torch.isnan(iou))
-    if outlier.any():
-        plt.scatter(polys1[outlier, ::][0, :, 0].cpu().detach().numpy(), polys1[outlier, ::][0, :, 1].cpu().detach().numpy(), color="r")
-        plt.scatter(polys2[outlier, ::][0, :, 0].cpu().detach().numpy(), polys2[outlier, ::][0, :, 1].cpu().detach().numpy(), color="b")
-        plt.show()
-        print(polys1[outlier, ::][0])
-        print(polys2[outlier, ::][0])
-        # print(polys1_np_keep[outlier, ::])
-        # print(polys2_np_keep[outlier, ::])
-        # print(intersections[outlier, ::])
-        # print(polys1[outlier, :, :])
-        # print(polys2[outlier, :, :])
-        # print(polyi[outlier, :, :])
-        # print(ai[outlier])
-        # print(a1[outlier])
-        # print(a2[outlier])
-        print(iou[outlier][0])
+    # outlier = torch.logical_or(torch.logical_or(iou > 1, iou < 0), torch.isnan(iou))
+    # if outlier.any():
+    #     plt.scatter(polys1[outlier, ::][0, :, 0].cpu().detach().numpy(), polys1[outlier, ::][0, :, 1].cpu().detach().numpy(), color="r")
+    #     plt.scatter(polys2[outlier, ::][0, :, 0].cpu().detach().numpy(), polys2[outlier, ::][0, :, 1].cpu().detach().numpy(), color="b")
+    #     plt.show()
+    #     print(polys1[outlier, ::][0])
+    #     print(polys2[outlier, ::][0])
+    #     # print(polys1_np_keep[outlier, ::])
+    #     # print(polys2_np_keep[outlier, ::])
+    #     # print(intersections[outlier, ::])
+    #     # print(polys1[outlier, :, :])
+    #     # print(polys2[outlier, :, :])
+    #     # print(polyi[outlier, :, :])
+    #     # print(ai[outlier])
+    #     # print(a1[outlier])
+    #     # print(a2[outlier])
+    #     print(iou[outlier][0])
 
     return iou
 
