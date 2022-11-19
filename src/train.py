@@ -101,7 +101,9 @@ def main_worker(gpu_idx, configs):
     if configs.pretrained_path is not None:
         assert os.path.isfile(configs.pretrained_path), "=> no checkpoint found at '{}'".format(configs.pretrained_path)
         model.load_state_dict(torch.load(configs.pretrained_path))
+        print('loaded pretrained model')
         if logger is not None:
+            print('loaded pretrained model')
             logger.info('loaded pretrained model at {}'.format(configs.pretrained_path))
 
     # resume weights of model from a checkpoint
@@ -113,11 +115,13 @@ def main_worker(gpu_idx, configs):
 
     # Data Parallel
     model = make_data_parallel(model, configs)
+    print('made parallel')
 
     # Make sure to create optimizer after moving the model to cuda
     optimizer = create_optimizer(configs, model)
     lr_scheduler = create_lr_scheduler(optimizer, configs)
     configs.step_lr_in_epoch = False if configs.lr_type in ['multi_step', 'cosin'] else True
+    print('made scheduler')
 
     # resume optimizer, lr_scheduler from a checkpoint
     if configs.resume_path is not None:
@@ -129,6 +133,7 @@ def main_worker(gpu_idx, configs):
         configs.start_epoch = utils_state_dict['epoch'] + 1
 
     if configs.is_master_node:
+        print('is master node')
         num_parameters = get_num_parameters(model)
         logger.info('number of trained parameters of the model: {}'.format(num_parameters))
 
