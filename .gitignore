@@ -1,5 +1,6 @@
 .DS_*
-dataset/
+dataset/kitti/testing
+dataset/kitti/training
 checkpoints/
 logs/
 src/.idea/
