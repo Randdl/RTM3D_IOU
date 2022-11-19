@@ -96,6 +96,7 @@ def main_worker(gpu_idx, configs):
 
     # model
     model = create_model(configs)
+    print('created model')
 
     # load weight from a checkpoint
     if configs.pretrained_path is not None:
