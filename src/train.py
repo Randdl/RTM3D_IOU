@@ -87,6 +87,7 @@ def main_worker(gpu_idx, configs):
     if configs.is_master_node:
         logger = Logger(configs.logs_dir, configs.saved_fn)
         logger.info('>>> Created a new logger')
+        print('>>> Created a new logger')
         logger.info('>>> configs: {}'.format(configs))
         tb_writer = SummaryWriter(log_dir=os.path.join(configs.logs_dir, 'tensorboard'))
     else:
