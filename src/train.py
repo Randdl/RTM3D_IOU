@@ -100,7 +100,9 @@ def main_worker(gpu_idx, configs):
 
     # load weight from a checkpoint
     if configs.pretrained_path is not None:
+        print('pretrained path is not None')
         assert os.path.isfile(configs.pretrained_path), "=> no checkpoint found at '{}'".format(configs.pretrained_path)
+        print('assert file existed')
         model.load_state_dict(torch.load(configs.pretrained_path))
         print('loaded pretrained model')
         if logger is not None:
@@ -109,6 +111,7 @@ def main_worker(gpu_idx, configs):
 
     # resume weights of model from a checkpoint
     if configs.resume_path is not None:
+        print('resume path is not None')
         assert os.path.isfile(configs.resume_path), "=> no checkpoint found at '{}'".format(configs.resume_path)
         model.load_state_dict(torch.load(configs.resume_path))
         if logger is not None:
