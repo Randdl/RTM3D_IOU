@@ -114,6 +114,7 @@ def main_worker(gpu_idx, configs):
         if logger is not None:
             logger.info('resume training model from checkpoint {}'.format(configs.resume_path))
 
+    print('to make parallel')
     # Data Parallel
     model = make_data_parallel(model, configs)
     print('made parallel')
