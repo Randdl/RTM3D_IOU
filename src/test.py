@@ -24,12 +24,13 @@ import numpy as np
 sys.path.append('../')
 
 import config.kitti_config as cnf
-from data_process.kitti_dataloader import create_test_dataloader
+from data_process.kitti_dataloader import create_test_dataloader, create_train_dataloader
 from models.model_utils import create_model
 from utils.misc import make_folder, time_synchronized
 from utils.evaluation_utils import rtm3d_decode, post_processing_2d, get_final_pred, draw_predictions
 from utils.torch_utils import _sigmoid
-
+from scipy.optimize import least_squares
+from math import sin, cos
 
 def parse_test_configs():
     parser = argparse.ArgumentParser(description='Demonstration config for RTM3D Implementation')
@@ -126,6 +127,56 @@ def denormalize_img(img):
     return ((img * std_rgb + mean_rgb) * 255).astype(np.uint8)
 
 
+def np_computeBox3D(label, P):
+    w = label[0]
+    h = label[1]
+    l = label[2]
+    x = label[3]
+    y = label[4]
+    z = label[5]
+    ry = label[6]
+
+    R = np.array([[+cos(ry), 0, +sin(ry)],
+                  [0, 1, 0],
+                  [-sin(ry), 0, +cos(ry)]])
+
+    x_corners = [0, l, l, l, l, 0, 0, 0]  # -l/2
+    y_corners = [0, 0, h, h, 0, 0, h, h]  # -h
+    z_corners = [0, 0, 0, w, w, w, w, 0]  # -w/2
+
+    x_corners = [i - l / 2 for i in x_corners]
+    y_corners = [i - h for i in y_corners]
+    z_corners = [i - w / 2 for i in z_corners]
+
+    corners_3D = np.array([x_corners, y_corners, z_corners])
+
+    corners_3D = R.dot(corners_3D)
+
+    corners_3D += np.array([x, y, z]).reshape((3, 1))
+
+    corners_3D_1 = np.vstack((corners_3D, np.ones((corners_3D.shape[-1]))))
+
+    corners_2D = P.dot(corners_3D_1)
+
+    corners_2D = corners_2D / corners_2D[2]
+
+    corners_2D = corners_2D[:2]
+    ver_coor = corners_2D[:, [4, 3, 2, 1, 5, 6, 7, 0]]
+    return corners_2D, corners_3D, ver_coor
+
+
+def diff_fun(input, real_corners, P, pred_depth):
+    vertices, corners_3D, _ = np_computeBox3D(input, P)
+    mid_point = np.mean(corners_3D, axis=1)
+    depth = np.sqrt(np.sum(np.square(mid_point)))
+    vertices = np.transpose(vertices)
+    vertices = vertices.flatten()
+    # print(real_corners)
+    # print(vertices)
+    diff = real_corners - vertices
+    return np.append(diff.flatten(), (depth - pred_depth) * 4)
+
+
 if __name__ == '__main__':
     configs = parse_test_configs()
 
@@ -159,6 +210,26 @@ if __name__ == '__main__':
             detections = detections.cpu().numpy()
             detections = post_processing_2d(detections, configs.num_classes, configs.down_ratio)
             detections = get_final_pred(detections[0], configs.num_classes, configs.peak_thresh)
+            P2 = metadatas['calib'].squeeze().numpy()
+            print(metadatas['id'])
+
+            for j in range(configs.num_classes):
+                if len(detections[j] > 0):
+                    for det in detections[j]:
+                        # (scores-0:1, xs-1:2, ys-2:3, wh-3:5, bboxes-5:9, ver_coor-9:25, rot-25:26, depth-26:27, dim-27:30)
+                        _score = det[0]
+                        _x, _y, _wh, _bbox, _ver_coor = int(det[1]), int(det[2]), det[3:5], det[5:9], det[9:25]
+                        _rot, _depth, _dim = det[25], det[26], det[27:30]
+                        _bbox = np.array(_bbox, dtype=np.int)
+                        print(_bbox)
+
+                        new_diff_fun = lambda a: diff_fun(a, _ver_coor, P2, _depth)
+                        x0 = np.array([3, 1.5, 10, 0, 3, 40, 0])
+                        x0[0:3] = _dim
+                        x0[6] = _rot
+                        res_1 = least_squares(new_diff_fun, x0)
+                        value_3d = res_1.x
+                        print(value_3d)
 
             img = imgs.squeeze().permute(1, 2, 0).numpy()
             img = denormalize_img(img)

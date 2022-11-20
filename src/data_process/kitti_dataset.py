@@ -48,7 +48,8 @@ class KittiDataset(Dataset):
         assert mode in ['train', 'val', 'test'], 'Invalid mode: {}'.format(mode)
         self.mode = mode
         self.is_test = (self.mode == 'test')
-        sub_folder = 'testing' if self.is_test else 'training'
+        # changed
+        sub_folder = 'training'
 
         self.aug_transforms = aug_transforms
 
@@ -88,9 +89,12 @@ class KittiDataset(Dataset):
             img = img[:, ::-1, :]
         img = self.normalize_img(img)
 
+        calib = self.get_calib(sample_id)
         metadata = {
             'use_left_cam': use_left_cam,
-            'hflipped': hflipped
+            'hflipped': hflipped,
+            'calib': calib.P2,
+            'id': sample_id,
         }
 
         return img_path, img.transpose(2, 0, 1), metadata

@@ -74,6 +74,7 @@ def make_data_parallel(model, configs):
         # DataParallel will divide and allocate batch_size to all available GPUs
         print('gpu idx is None')
         model = torch.nn.DataParallel(model).cuda()
+        print('made parallel')
 
     return model
 
