@@ -93,10 +93,13 @@ class Vertexes_Coor_L1Loss(nn.Module):
 
     def forward(self, output, mask, ind, target):
         pred = _transpose_and_gather_feat(output, ind)
+        device = output.device
+        displacement = torch.tensor(
+            [-10, 10, 10, 10, 10, 10, -10, 10, -10, -10, 10, -10, 10, -10, -10, -10], device=device)
+        pred = pred + displacement
         mask = mask.float()
         loss = F.l1_loss(pred * mask, target * mask, size_average=False)
         loss = loss / (mask.sum() + 1e-4)
-        print(loss)
         return loss
 
 
@@ -106,19 +109,32 @@ class Vertexes_Coor_IoULoss(nn.Module):
 
     def forward(self, output, mask, ind, target):
         pred = _transpose_and_gather_feat(output, ind)
-        mask_l1 = mask.float()
-        l1_loss = F.l1_loss(pred * mask_l1, target * mask_l1, size_average=False)
-        l1_loss = l1_loss / (mask.sum() + 1e-4)
+        # mask_l1 = mask.float()
+        # l1_loss = F.l1_loss(pred * mask_l1, target * mask_l1, size_average=False)
+        # l1_loss = l1_loss / (mask.sum() + 1e-4)
+        # print(mask[:, 0:2, :])
+        # print(target[:, 0:2, :])
 
-        mask = mask == 1
-        mask = mask.all(dim=2)
-        pred = pred[mask, ::]
-        target = target[mask, ::]
+        # mask = mask == 1
+        # mask = mask.all(dim=2)
+        # pred = pred[mask, ::]
+        # target = target[mask, ::]
 
         device = output.device
         displacement = torch.tensor([[-10, 10], [10, 10], [10, -10], [-10, -10]], device=device)
 
+        mask = mask.view(-1, 8, 2)
         pred = pred.view(-1, 8, 2)
+
+        mask_front = mask[:, [0, 1, 5, 4]]
+        mask_back = mask[:, [3, 2, 6, 7]]
+        mask_front = mask_front.view(-1, 8)
+        mask_back = mask_back.view(-1, 8)
+        mask_front = mask_front == 1
+        mask_front = mask_front.all(dim=1)
+        mask_back = mask_back == 1
+        mask_back = mask_back.all(dim=1)
+
         front = pred[:, [0, 1, 5, 4]]
         back = pred[:, [3, 2, 6, 7]]
         front = front + displacement
@@ -127,6 +143,11 @@ class Vertexes_Coor_IoULoss(nn.Module):
         target = target.view(-1, 8, 2)
         tg_front = target[:, [0, 1, 5, 4]]
         tg_back = target[:, [3, 2, 6, 7]]
+
+        front = front[mask_front, ::]
+        tg_front = tg_front[mask_front, ::]
+        back = back[mask_back, ::]
+        tg_back = tg_back[mask_back, ::]
 
         loss = batch_poly_diou_loss(front, tg_front, a=0).sum() \
                + batch_poly_diou_loss(back, tg_back, a=0).sum()
@@ -139,7 +160,7 @@ class Vertexes_Coor_IoULoss(nn.Module):
         # print(loss)
         # print(l1_loss)
 
-        return loss + l1_loss
+        return loss
 
 
 class L2Loss(nn.Module):
@@ -211,7 +232,8 @@ class Compute_Loss(nn.Module):
         self.device = device
         self.focal_loss = FocalLoss()
         self.l1_loss = L1Loss()
-        self.vercoor_l1 = Vertexes_Coor_IoULoss()
+        self.vercoor_iou = Vertexes_Coor_IoULoss()
+        self.vercoor_l1 = Vertexes_Coor_L1Loss()
         self.l2_loss = L2Loss()
         self.rot_loss = BinRotLoss()
         self.weight_hm_mc, self.weight_hm_ver, self.weight_dim, self.weight_rot, self.weight_depth = 1., 1., 1., 0.5, 0.1
@@ -242,7 +264,8 @@ class Compute_Loss(nn.Module):
         l_hm_mc = self.focal_loss(outputs['hm_mc'], tg['hm_mc'])
         l_hm_ver = self.focal_loss(outputs['hm_ver'], tg['hm_ver'])
         # output, mask, ind, target
-        l_vercoor = self.vercoor_l1(outputs['vercoor'], tg['ver_coor_mask'], tg['indices_center'], tg['ver_coor'])
+        l_vercoorl1 = self.vercoor_l1(outputs['vercoor'], tg['ver_coor_mask'], tg['indices_center'], tg['ver_coor'])
+        l_vercooriou = self.vercoor_iou(outputs['vercoor'], tg['ver_coor_mask'], tg['indices_center'], tg['ver_coor'])
         l_cenoff = self.l1_loss(outputs['cenoff'], tg['obj_mask'], tg['indices_center'], tg['cen_offset'])
         l_veroff = self.l1_loss(outputs['veroff'], tg['ver_offset_mask'], tg['indices_vertexes'], tg['ver_offset'])
         # TODO: What happend if the norm_dim < 0, we can't apply the log operator
@@ -255,15 +278,16 @@ class Compute_Loss(nn.Module):
         l_depth = self.l1_loss(outputs['depth'], tg['obj_mask'], tg['indices_center'], tg['depth'])
         l_boxwh = self.l1_loss(outputs['wh'], tg['obj_mask'], tg['indices_center'], tg['wh'])
 
-        total_loss = l_hm_mc * self.weight_hm_mc + l_hm_ver * self.weight_hm_ver + l_vercoor * self.weight_vercoor + \
-                     l_cenoff * self.weight_cenoff + l_veroff * self.weight_veroff + l_dim * self.weight_dim + \
-                     l_rot * self.weight_rot + l_depth * self.weight_depth + l_boxwh * self.weight_wh
+        total_loss = l_hm_mc * self.weight_hm_mc + l_hm_ver * self.weight_hm_ver + l_vercoorl1 * self.weight_vercoor + \
+                     l_vercooriou * self.weight_vercoor + l_cenoff * self.weight_cenoff + l_veroff * self.weight_veroff + \
+                     l_dim * self.weight_dim + l_rot * self.weight_rot + l_depth * self.weight_depth + l_boxwh * self.weight_wh
 
         loss_stats = {
             'total_loss': to_cpu(total_loss).item(),
             'hm_mc_loss': to_cpu(l_hm_mc).item(),
             'hm_ver_loss': to_cpu(l_hm_ver).item(),
-            'ver_coor_loss': to_cpu(l_vercoor).item(),
+            'ver_coorl1_loss': to_cpu(l_vercoorl1).item(),
+            'ver_cooriou_loss': to_cpu(l_vercooriou).item(),
             'cen_offset_loss': to_cpu(l_cenoff).item(),
             'ver_offset_loss': to_cpu(l_veroff).item(),
             'dim_loss': to_cpu(l_dim).item(),
