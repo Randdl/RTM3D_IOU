@@ -166,6 +166,8 @@ def main_worker(gpu_idx, configs):
             train_sampler.set_epoch(epoch)
         # train for one epoch
         train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, epoch, configs, logger, tb_writer)
+        if not configs.no_val:
+            print('Has evaluation.')
         if (not configs.no_val) and (epoch % configs.checkpoint_freq == 0):
             val_dataloader = create_val_dataloader(configs)
             print('number of batches in val_dataloader: {}'.format(len(val_dataloader)))
