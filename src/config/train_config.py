@@ -75,15 +75,15 @@ def parse_train_configs():
                         help='the type of learning rate scheduler (cosin or multi_step)')
     parser.add_argument('--lr', type=float, default=0.0002, metavar='LR',
                         help='initial learning rate')
-    parser.add_argument('--minimum_lr', type=float, default=1e-7, metavar='MIN_LR',
+    parser.add_argument('--minimum_lr', type=float, default=1e-6, metavar='MIN_LR',
                         help='minimum learning rate during training')
     parser.add_argument('--momentum', type=float, default=0.949, metavar='M',
                         help='momentum')
-    parser.add_argument('-wd', '--weight_decay', type=float, default=0., metavar='WD',
+    parser.add_argument('-wd', '--weight_decay', type=float, default=1e-6, metavar='WD',
                         help='weight decay (default: 1e-6)')
     parser.add_argument('--optimizer_type', type=str, default='adam', metavar='OPTIMIZER',
                         help='the type of optimizer, it can be sgd or adam')
-    parser.add_argument('--steps', nargs='*', default=[150, 180],
+    parser.add_argument('--steps', nargs='*', default=[200, 270],
                         help='number of burn in step')
 
     ####################################################################
