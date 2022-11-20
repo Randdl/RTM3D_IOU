@@ -166,13 +166,6 @@ def main_worker(gpu_idx, configs):
             train_sampler.set_epoch(epoch)
         # train for one epoch
         train_one_epoch(train_dataloader, model, optimizer, lr_scheduler, epoch, configs, logger, tb_writer)
-        if not configs.no_val:
-            val_dataloader = create_val_dataloader(configs)
-            print('number of batches in val_dataloader: {}'.format(len(val_dataloader)))
-            val_loss = validate(val_dataloader, model, configs)
-            print('val_loss: {:.4e}'.format(val_loss))
-            if tb_writer is not None:
-                tb_writer.add_scalar('Val_loss', val_loss, epoch)
         if (not configs.no_val) and (epoch % configs.checkpoint_freq == 0):
             val_dataloader = create_val_dataloader(configs)
             print('number of batches in val_dataloader: {}'.format(len(val_dataloader)))
