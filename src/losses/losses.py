@@ -106,6 +106,10 @@ class Vertexes_Coor_IoULoss(nn.Module):
 
     def forward(self, output, mask, ind, target):
         pred = _transpose_and_gather_feat(output, ind)
+        mask_l1 = mask.float()
+        l1_loss = F.l1_loss(pred * mask_l1, target * mask_l1, size_average=False)
+        l1_loss = l1_loss / (mask.sum() + 1e-4)
+
         mask = mask == 1
         mask = mask.all(dim=2)
         pred = pred[mask, ::]
@@ -126,11 +130,11 @@ class Vertexes_Coor_IoULoss(nn.Module):
 
         loss = batch_poly_diou_loss(front, tg_front, a=0).sum() \
                + batch_poly_diou_loss(back, tg_back, a=0).sum()
-        loss = loss / (mask.sum() / 4 + 1e-2)
+        loss = loss / (mask.sum() / 4 + 1e-4)
 
-        l1_loss = F.l1_loss(front, tg_front, size_average=False) \
-                  + F.l1_loss(back, tg_back, size_average=False)
-        l1_loss = l1_loss / (mask.sum() * 64 + 1e-2)
+        # l1_loss = F.l1_loss(front, tg_front, size_average=False) \
+        #           + F.l1_loss(back, tg_back, size_average=False)
+        # l1_loss = l1_loss / (mask.sum() * 16 + 1e-4)
         # print("iou:", loss, "; l1:", l1_loss)
         # print(loss)
         # print(l1_loss)
