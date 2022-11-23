@@ -109,7 +109,22 @@ def rtm3d_decode(hm_mc, hm_ver, ver_coor, cen_off, ver_off, wh, rot, depth, dim,
                         xs + wh[..., 0:1] / 2,
                         ys + wh[..., 1:2] / 2], dim=2)
 
+    # print("DEBUG:")
+    # print(ver_coor.shape)
     ver_coor = _transpose_and_gather_feat(ver_coor, inds)
+    # print(ver_coor.shape)
+
+    device = ver_coor.device
+    displacement = torch.tensor(
+        [-10, 10, 10, 10, 10, 10, -10, 10, -10, -10, 10, -10, 10, -10, -10, -10], device=device)
+    ver_coor = ver_coor + displacement
+
+    keep_inds = (scores > 0.2)
+    # print(keep_inds.shape)
+    # print(ver_coor.shape)
+    #
+    # print(ver_coor[keep_inds.view(1, 100)])
+
     ver_coor = ver_coor.view(batch_size, K, num_vertexes * 2)
     ver_coor[..., ::2] += xs.view(batch_size, K, 1).expand(batch_size, K, num_vertexes)
     ver_coor[..., 1::2] += ys.view(batch_size, K, 1).expand(batch_size, K, num_vertexes)
@@ -150,7 +165,10 @@ def rtm3d_decode(hm_mc, hm_ver, ver_coor, cen_off, ver_off, wh, rot, depth, dim,
            (ver_pos[..., 1:2] < 0) + (ver_pos[..., 1:2] > hm_h) + \
            (ver_score < thresh) + (min_dist > (torch.max(dummy_h, dummy_w) * 0.3))
     mask = (mask > 0).float().expand(batch_size, num_vertexes, K, 2)
-    ver_coor = (1 - mask) * ver_pos + mask * ver_coor
+    # print(ver_coor[:, :, keep_inds.view(100), :])
+    # print(mask[:, :, keep_inds.view(100), :])
+    # ver_coor = (1 - mask) * ver_pos + mask * ver_coor
+    # print(ver_coor[:, :, keep_inds.view(100), :])
     ver_coor = ver_coor.permute(0, 2, 1, 3).contiguous().view(batch_size, K, num_vertexes * 2)
 
     # (scores x 1, xs x 1, ys x 1, wh x 2, bboxes x 4, ver_coor x 16, rot x 8, depth x 1, dim x 3, clses x 1)
@@ -197,7 +215,7 @@ def post_processing_2d(detections, num_classes=3, down_ratio=4):
                 detections[i, inds, 1:25].astype(np.float32) * down_ratio,
                 get_alpha(detections[i, inds, 25:33])[:, np.newaxis].astype(np.float32),
                 get_pred_depth(detections[i, inds, 33:34]).astype(np.float32),
-                detections[i, inds, 34:37].astype(np.float32)], axis=1)
+                detections[i, inds, 25:37].astype(np.float32)], axis=1)
         ret.append(top_preds)
 
     return ret
@@ -206,13 +224,14 @@ def post_processing_2d(detections, num_classes=3, down_ratio=4):
 def get_final_pred(detections, num_classes=3, peak_thresh=0.2):
     for j in range(num_classes):
         if len(detections[j] > 0):
+            # print(detections[j][:, 0])
             keep_inds = (detections[j][:, 0] > peak_thresh)
             detections[j] = detections[j][keep_inds]
 
     return detections
 
 
-def draw_predictions(img, detections, colors, num_classes=3, show_3dbox=False):
+def draw_predictions(img, detections, colors, num_classes=3, show_3dbox=True):
     for j in range(num_classes):
         if len(detections[j] > 0):
             for det in detections[j]:

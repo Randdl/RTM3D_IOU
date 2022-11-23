@@ -113,9 +113,8 @@ def parse_test_configs():
     configs.root_dir = '../'
     configs.dataset_dir = os.path.join(configs.root_dir, 'dataset', 'kitti')
 
-    if configs.save_test_output:
-        configs.results_dir = os.path.join(configs.root_dir, 'results', configs.saved_fn)
-        make_folder(configs.results_dir)
+    configs.results_dir = os.path.join(configs.root_dir, 'results', configs.saved_fn)
+    make_folder(configs.results_dir)
 
     return configs
 
@@ -162,19 +161,140 @@ def np_computeBox3D(label, P):
 
     corners_2D = corners_2D[:2]
     ver_coor = corners_2D[:, [4, 3, 2, 1, 5, 6, 7, 0]]
+    corners_2D = corners_2D[:, [3, 2, 7, 6, 4, 1, 0, 5]]
     return corners_2D, corners_3D, ver_coor
 
 
-def diff_fun(input, real_corners, P, pred_depth):
+def diff_fun(input, real_corners, P, pred_depth, dim, rot):
     vertices, corners_3D, _ = np_computeBox3D(input, P)
-    mid_point = np.mean(corners_3D, axis=1)
-    depth = np.sqrt(np.sum(np.square(mid_point)))
+    # print('vertices', vertices)
+    # mid_point = np.mean(corners_3D, axis=1)
+    # depth = np.sqrt(np.sum(np.square(mid_point)))
     vertices = np.transpose(vertices)
     vertices = vertices.flatten()
     # print(real_corners)
     # print(vertices)
     diff = real_corners - vertices
-    return np.append(diff.flatten(), (depth - pred_depth) * 4)
+    diff *= 1e-1
+
+    dim_diff = input[0:3] - dim
+    depth_diff = input[5] - pred_depth
+    rot_diff = input[6] - rot
+    return np.append(np.concatenate((diff.flatten(), dim_diff)), [depth_diff, rot_diff])
+    # return diff.flatten()
+
+
+def gen_position(kps,dim,rot,meta,const,x):
+    b=kps.size(0)
+    c=kps.size(1)
+    # opinv=meta['trans_output_inv']
+    calib=meta['calib']
+
+    # opinv = opinv.unsqueeze(1)
+    # opinv = opinv.expand(b, c, -1, -1).contiguous().view(-1, 2, 3).float()
+    kps = kps.view(b, c, -1, 2).permute(0, 1, 3, 2)
+
+    # hom = torch.ones(b, c, 1, 9).cuda()
+    # kps = torch.cat((kps, hom), dim=2).view(-1, 3, 9)
+    # kps = torch.bmm(opinv, kps).view(b, c, 2, 9)
+    kps = kps.view(b, c, 2, 8)
+
+    kps = kps.permute(0, 1, 3, 2).contiguous().view(b, c, -1)  # 16.32,18
+    si = torch.zeros_like(kps[:, :, 0:1]) + calib[:, 0:1, 0:1]
+    alpha_idx = rot[:, :, 1] > rot[:, :, 5]
+    alpha_idx = alpha_idx.float()
+    alpha1 = torch.atan(rot[:, :, 2] / rot[:, :, 3]) + (-0.5 * np.pi)
+    alpha2 = torch.atan(rot[:, :, 6] / rot[:, :, 7]) + (0.5 * np.pi)
+    alpna_pre = alpha1 * alpha_idx + alpha2 * (1 - alpha_idx)
+    alpna_pre = alpna_pre.unsqueeze(2)
+    # alpna_pre=rot_gt
+
+    # rot_y = alpna_pre + torch.atan2(kps[:, :, 16:17] - calib[:, 0:1, 2:3], si)
+    rot_y = alpna_pre + torch.atan2(x - calib[:, 0:1, 2:3], si)
+    rot_y[rot_y > np.pi] = rot_y[rot_y > np.pi] - 2 * np.pi
+    rot_y[rot_y < - np.pi] = rot_y[rot_y < - np.pi] + 2 * np.pi
+
+    calib = calib.unsqueeze(1)
+    calib = calib.expand(b, c, -1, -1).contiguous()
+
+    # kpoint = kps[:, :, :16]
+    kpoint = kps
+
+    f = calib[:, :, 0, 0].unsqueeze(2)
+    f = f.expand_as(kpoint)
+    cx, cy = calib[:, :, 0, 2].unsqueeze(2), calib[:, :, 1, 2].unsqueeze(2)
+    cxy = torch.cat((cx, cy), dim=2)
+    cxy = cxy.repeat(1, 1, 8)  # b,c,16
+    kp_norm = (kpoint - cxy) / f
+
+    l = dim[:, :, 2:3]
+    h = dim[:, :, 0:1]
+    w = dim[:, :, 1:2]
+    cosori = torch.cos(rot_y)
+    sinori = torch.sin(rot_y)
+
+    B = torch.zeros_like(kpoint)
+    C = torch.zeros_like(kpoint)
+
+    kp = kp_norm.unsqueeze(3)  # b,c,16,1
+    const = const.expand(b, c, -1, -1)
+    A = torch.cat([const, kp], dim=3)
+
+    B[:, :, 0:1] = l * 0.5 * cosori + w * 0.5 * sinori
+    B[:, :, 1:2] = h * 0.5
+    B[:, :, 2:3] = l * 0.5 * cosori - w * 0.5 * sinori
+    B[:, :, 3:4] = h * 0.5
+    B[:, :, 4:5] = -l * 0.5 * cosori - w * 0.5 * sinori
+    B[:, :, 5:6] = h * 0.5
+    B[:, :, 6:7] = -l * 0.5 * cosori + w * 0.5 * sinori
+    B[:, :, 7:8] = h * 0.5
+    B[:, :, 8:9] = l * 0.5 * cosori + w * 0.5 * sinori
+    B[:, :, 9:10] = -h * 0.5
+    B[:, :, 10:11] = l * 0.5 * cosori - w * 0.5 * sinori
+    B[:, :, 11:12] = -h * 0.5
+    B[:, :, 12:13] = -l * 0.5 * cosori - w * 0.5 * sinori
+    B[:, :, 13:14] = -h * 0.5
+    B[:, :, 14:15] = -l * 0.5 * cosori + w * 0.5 * sinori
+    B[:, :, 15:16] = -h * 0.5
+
+    C[:, :, 0:1] = -l * 0.5 * sinori + w * 0.5 * cosori
+    C[:, :, 1:2] = -l * 0.5 * sinori + w * 0.5 * cosori
+    C[:, :, 2:3] = -l * 0.5 * sinori - w * 0.5 * cosori
+    C[:, :, 3:4] = -l * 0.5 * sinori - w * 0.5 * cosori
+    C[:, :, 4:5] = l * 0.5 * sinori - w * 0.5 * cosori
+    C[:, :, 5:6] = l * 0.5 * sinori - w * 0.5 * cosori
+    C[:, :, 6:7] = l * 0.5 * sinori + w * 0.5 * cosori
+    C[:, :, 7:8] = l * 0.5 * sinori + w * 0.5 * cosori
+    C[:, :, 8:9] = -l * 0.5 * sinori + w * 0.5 * cosori
+    C[:, :, 9:10] = -l * 0.5 * sinori + w * 0.5 * cosori
+    C[:, :, 10:11] = -l * 0.5 * sinori - w * 0.5 * cosori
+    C[:, :, 11:12] = -l * 0.5 * sinori - w * 0.5 * cosori
+    C[:, :, 12:13] = l * 0.5 * sinori - w * 0.5 * cosori
+    C[:, :, 13:14] = l * 0.5 * sinori - w * 0.5 * cosori
+    C[:, :, 14:15] = l * 0.5 * sinori + w * 0.5 * cosori
+    C[:, :, 15:16] = l * 0.5 * sinori + w * 0.5 * cosori
+
+    B = B - kp_norm * C
+
+    # A=A*kps_mask1
+
+    AT = A.permute(0, 1, 3, 2)
+    AT = AT.view(b * c, 3, 16)
+    A = A.view(b * c, 16, 3)
+    B = B.view(b * c, 16, 1).float()
+    # mask = mask.unsqueeze(2)
+
+    pinv = torch.bmm(AT, A)
+    pinv = torch.inverse(pinv)  # b*c 3 3
+
+
+
+    pinv = torch.bmm(pinv, AT)
+    pinv = torch.bmm(pinv, B)
+    pinv = pinv.view(b, c, 3, 1).squeeze(3)
+
+    #pinv[:, :, 1] = pinv[:, :, 1] + dim[:, :, 0] / 2
+    return pinv,rot_y,kps
 
 
 if __name__ == '__main__':
@@ -191,6 +311,11 @@ if __name__ == '__main__':
     out_cap = None
 
     model.eval()
+
+    const = torch.Tensor([[-1, 0], [0, -1], [-1, 0], [0, -1], [-1, 0], [0, -1], [-1, 0], [0, -1], [-1, 0], [0, -1], [-1, 0], [0, -1],
+         [-1, 0], [0, -1], [-1, 0], [0, -1]])
+    const = const.unsqueeze(0).unsqueeze(0)
+    const = const.to('cpu')
 
     test_dataloader = create_test_dataloader(configs)
     with torch.no_grad():
@@ -209,9 +334,15 @@ if __name__ == '__main__':
                                       outputs['dim'], K=configs.K)
             detections = detections.cpu().numpy()
             detections = post_processing_2d(detections, configs.num_classes, configs.down_ratio)
+
+            # position, rot_y, kps_inv = gen_position(kps, dim, rot, meta, const)
+
             detections = get_final_pred(detections[0], configs.num_classes, configs.peak_thresh)
             P2 = metadatas['calib'].squeeze().numpy()
+            pad_size = metadatas['pad_size'].numpy().flatten()
+            # print(pad_size)
             print(metadatas['id'])
+            output = []
 
             for j in range(configs.num_classes):
                 if len(detections[j] > 0):
@@ -219,17 +350,68 @@ if __name__ == '__main__':
                         # (scores-0:1, xs-1:2, ys-2:3, wh-3:5, bboxes-5:9, ver_coor-9:25, rot-25:26, depth-26:27, dim-27:30)
                         _score = det[0]
                         _x, _y, _wh, _bbox, _ver_coor = int(det[1]), int(det[2]), det[3:5], det[5:9], det[9:25]
-                        _rot, _depth, _dim = det[25], det[26], det[27:30]
+                        _rot, _depth, _dim, rots = det[25], det[26], det[36:39], det[26:34]
+                        # print(_dim)
+                        # print(_rot)
+                        bbox = _bbox
                         _bbox = np.array(_bbox, dtype=np.int)
-                        print(_bbox)
+                        # print(_ver_coor)
+                        # print(_bbox)
+                        # position, rot_y, kps_inv = gen_position(torch.tensor(_ver_coor).unsqueeze(0).unsqueeze(0), torch.tensor(_dim).unsqueeze(0).unsqueeze(0)
+                        #                                         , torch.tensor(rots).unsqueeze(0).unsqueeze(0), metadatas, const, torch.tensor(_x).unsqueeze(0).unsqueeze(0))
+                        # print(position)
+                        # print(rot_y)
+                        # print(kps_inv)
 
-                        new_diff_fun = lambda a: diff_fun(a, _ver_coor, P2, _depth)
-                        x0 = np.array([3, 1.5, 10, 0, 3, 40, 0])
-                        x0[0:3] = _dim
-                        x0[6] = _rot
-                        res_1 = least_squares(new_diff_fun, x0)
+                        pred_vertices = _ver_coor.copy()
+                        pred_vertices = pred_vertices.reshape((8, 2))
+                        pred_vertices[:, 0] -= pad_size[0]
+                        pred_vertices[:, 1] -= pad_size[1]
+                        pred_vertices = pred_vertices.flatten()
+
+                        bbox[[0, 2]] -= pad_size[0]
+                        bbox[[1, 3]] -= pad_size[1]
+
+                        new_diff_fun = lambda a: diff_fun(a, pred_vertices, P2, _depth, _dim, _rot)
+                        lower = np.array([-100, -100, -100, -100, -100, _depth - 2, -4])
+                        upper = np.array([100, 100, 100, 100, 100, _depth + 2, 4])
+                        x0 = np.array([1.42, 1.58, 3.48, 3.87, 1.64, _depth, -1.83])
+
+                        res_1 = least_squares(new_diff_fun, x0, bounds=(lower, upper))
+                        # vertices, corners_3D, _ = np_computeBox3D(x0, P2)
+                        # vertices = vertices.transpose().flatten()
+
+                        # print(diff_fun(x0, pred_vertices, P2, _depth, x0[0:3], x0[6]))
+
+                        # print(vertices)
+                        # print(pred_vertices)
+
                         value_3d = res_1.x
+                        # print(_rot)
+                        # print(_dim)
+                        # print(_depth)
                         print(value_3d)
+                        print(res_1.cost)
+                        # ver, _, _ = np_computeBox3D(value_3d, P2)
+                        # print(ver)
+                        if j == 0:
+                            cls = 'Pedestrian'
+                        elif j == 1:
+                            cls = 'Car'
+                        else:
+                            cls = 'Cyclist'
+                        output_list = [cls, 0.00, 0, 0.00]
+                        output_list += bbox.tolist()
+                        output_list += value_3d.tolist()
+                        output_list.append(_score.item())
+                        print(output_list)
+                        output_list = ' '.join([str(x) for x in output_list])
+                        output_list += '\n'
+                        output.append(output_list)
+            img_fn = os.path.basename(img_paths[0])[:-4]
+            output_file_name = os.path.join(configs.results_dir, '{}.txt'.format(img_fn))
+            with open(output_file_name, 'w') as fp:
+                fp.writelines(output)
 
             img = imgs.squeeze().permute(1, 2, 0).numpy()
             img = denormalize_img(img)
