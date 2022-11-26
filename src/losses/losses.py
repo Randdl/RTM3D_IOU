@@ -148,6 +148,10 @@ class Vertexes_Coor_IoULoss(nn.Module):
         tg_front = tg_front[mask_front, ::]
         back = back[mask_back, ::]
         tg_back = tg_back[mask_back, ::]
+        
+        if front.shape[0] == 0 or back.shape[0] == 0:
+            loss = torch.tensor([0], device=front.get_device())
+            return loss
 
         if front.shape[0] == 0 or back.shape[0] == 0:
             loss = torch.tensor([0], device=front.get_device())
