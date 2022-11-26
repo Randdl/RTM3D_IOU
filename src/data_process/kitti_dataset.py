@@ -50,7 +50,7 @@ class KittiDataset(Dataset):
         self.mode = mode
         self.is_test = (self.mode == 'test')
         # changed
-        sub_folder = 'training'
+        sub_folder = 'testing' if self.is_test else 'training'
 
         self.aug_transforms = aug_transforms
 
@@ -59,7 +59,8 @@ class KittiDataset(Dataset):
         self.calib_dir = os.path.join(self.dataset_dir, sub_folder, "calib")
         self.label_dir = os.path.join(self.dataset_dir, sub_folder, "label_2")
         # changed
-        split_txt_path = os.path.join(self.dataset_dir, 'ImageSets', '{}.txt'.format('val'))
+        split_txt_path = os.path.join(self.dataset_dir, 'ImageSets', '{}.txt'.format(mode))
+        # split_txt_path = os.path.join(self.dataset_dir, 'ImageSets', '{}.txt'.format('val'))
         self.sample_id_list = [int(x.strip()) for x in open(split_txt_path).readlines()]
 
         if num_samples is not None:
