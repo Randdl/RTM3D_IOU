@@ -34,7 +34,7 @@ from math import sin, cos
 
 def parse_test_configs():
     parser = argparse.ArgumentParser(description='Demonstration config for RTM3D Implementation')
-    parser.add_argument('--saved_fn', type=str, default='rtm3d', metavar='FN',
+    parser.add_argument('--saved_fn', type=str, default='rtm3d_l1', metavar='FN',
                         help='The name using for saving logs, models,...')
     parser.add_argument('-a', '--arch', type=str, default='resnet_18', metavar='ARCH',
                         help='The name of the model architecture')
@@ -175,11 +175,14 @@ def diff_fun(input, real_corners, P, pred_depth, dim, rot):
     # print(real_corners)
     # print(vertices)
     diff = real_corners - vertices
-    diff *= 1e-1
+    diff *= 5e-3
 
     dim_diff = input[0:3] - dim
+    dim_diff *= 1
     depth_diff = input[5] - pred_depth
+    depth_diff *= 1
     rot_diff = input[6] - rot
+    rot_diff *= 1
     return np.append(np.concatenate((diff.flatten(), dim_diff)), [depth_diff, rot_diff])
     # return diff.flatten()
 

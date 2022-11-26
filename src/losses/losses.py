@@ -149,6 +149,9 @@ class Vertexes_Coor_IoULoss(nn.Module):
         back = back[mask_back, ::]
         tg_back = tg_back[mask_back, ::]
 
+        if front.shape[0] == 0 or back.shape[0] == 0:
+            loss = torch.tensor([0], device=front.get_device())
+            return loss
         loss = batch_poly_diou_loss(front, tg_front, a=0).sum() \
                + batch_poly_diou_loss(back, tg_back, a=0).sum()
         loss = loss / (mask.sum() / 4 + 1e-4)

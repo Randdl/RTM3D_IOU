@@ -46,6 +46,7 @@ class KittiDataset(Dataset):
         self.std_rgb = np.array([0.229, 0.224, 0.225], np.float32).reshape(1, 1, 3)
 
         assert mode in ['train', 'val', 'test'], 'Invalid mode: {}'.format(mode)
+        # changed
         self.mode = mode
         self.is_test = (self.mode == 'test')
         # changed
@@ -57,7 +58,8 @@ class KittiDataset(Dataset):
         self.image_dir_right = os.path.join(self.dataset_dir, sub_folder, "image_3")
         self.calib_dir = os.path.join(self.dataset_dir, sub_folder, "calib")
         self.label_dir = os.path.join(self.dataset_dir, sub_folder, "label_2")
-        split_txt_path = os.path.join(self.dataset_dir, 'ImageSets', '{}.txt'.format(mode))
+        # changed
+        split_txt_path = os.path.join(self.dataset_dir, 'ImageSets', '{}.txt'.format('val'))
         self.sample_id_list = [int(x.strip()) for x in open(split_txt_path).readlines()]
 
         if num_samples is not None:
@@ -95,6 +97,7 @@ class KittiDataset(Dataset):
             'hflipped': hflipped,
             'calib': calib.P2,
             'id': sample_id,
+            'pad_size': pad_size,
         }
 
         return img_path, img.transpose(2, 0, 1), metadata

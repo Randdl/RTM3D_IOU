@@ -257,19 +257,21 @@ def draw_box_3d(image, corners, color=(0, 0, 255)):
     '''
 
     face_idx = [[0, 1, 5, 4],
-                [1, 2, 6, 5],
+                # [1, 2, 6, 5],
                 [2, 3, 7, 6],
-                [3, 0, 4, 7]]
-    for ind_f in range(3, -1, -1):
+                # [3, 0, 4, 7]
+                ]
+    for ind_f in range(1, -1, -1):
         f = face_idx[ind_f]
         for j in range(4):
+            # print(corners[f[j], 0], corners[f[j], 1], corners[f[(j + 1) % 4], 0], corners[f[(j + 1) % 4], 1])
             cv2.line(image, (corners[f[j], 0], corners[f[j], 1]),
                      (corners[f[(j + 1) % 4], 0], corners[f[(j + 1) % 4], 1]), color, 2, lineType=cv2.LINE_AA)
-        if ind_f == 0:
-            cv2.line(image, (corners[f[0], 0], corners[f[0], 1]),
-                     (corners[f[2], 0], corners[f[2], 1]), color, 1, lineType=cv2.LINE_AA)
-            cv2.line(image, (corners[f[1], 0], corners[f[1], 1]),
-                     (corners[f[3], 0], corners[f[3], 1]), color, 1, lineType=cv2.LINE_AA)
+        # if ind_f == 0:
+        #     cv2.line(image, (corners[f[0], 0], corners[f[0], 1]),
+        #              (corners[f[2], 0], corners[f[2], 1]), color, 1, lineType=cv2.LINE_AA)
+        #     cv2.line(image, (corners[f[1], 0], corners[f[1], 1]),
+        #              (corners[f[3], 0], corners[f[3], 1]), color, 1, lineType=cv2.LINE_AA)
 
     return image
 
