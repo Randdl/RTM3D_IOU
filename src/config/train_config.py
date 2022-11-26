@@ -101,7 +101,7 @@ def parse_train_configs():
                         help='url used to set up distributed training')
     parser.add_argument('--dist-backend', default='nccl', type=str,
                         help='distributed backend')
-    parser.add_argument('--gpu_idx', default=None, type=int,
+    parser.add_argument('--gpu_idx', default=0, type=int,
                         help='GPU index to use.')
     parser.add_argument('--no_cuda', action='store_true',
                         help='If true, cuda is not used.')
