@@ -4,6 +4,7 @@ dataset/kitti/training
 checkpoints/
 logs/
 src/.idea/
+results/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
