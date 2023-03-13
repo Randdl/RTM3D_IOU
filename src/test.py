@@ -29,16 +29,16 @@ from models.model_utils import create_model
 from utils.misc import make_folder, time_synchronized
 from utils.evaluation_utils import rtm3d_decode, post_processing_2d, get_final_pred, draw_predictions
 from utils.torch_utils import _sigmoid
-from scipy.optimize import least_squares
+from scipy.optimize import least_squares, minimize
 from math import sin, cos
 
 def parse_test_configs():
     parser = argparse.ArgumentParser(description='Demonstration config for RTM3D Implementation')
-    parser.add_argument('--saved_fn', type=str, default='rtm3d_l1', metavar='FN',
+    parser.add_argument('--saved_fn', type=str, default='rtm3d_new_l1_80/data', metavar='FN',
                         help='The name using for saving logs, models,...')
     parser.add_argument('-a', '--arch', type=str, default='resnet_18', metavar='ARCH',
                         help='The name of the model architecture')
-    parser.add_argument('--pretrained_path', type=str, default=None, metavar='PATH',
+    parser.add_argument('--pretrained_path', type=str, default='../checkpoints/Model_rtm3d_new_l1_epoch_80.pth', metavar='PATH',
                         help='the path of the pretrained checkpoint')
     parser.add_argument('--head_conv', type=int, default=-1,
                         help='conv layer channels for output head'
@@ -55,7 +55,7 @@ def parse_test_configs():
 
     parser.add_argument('--no_cuda', action='store_true',
                         help='If true, cuda is not used.')
-    parser.add_argument('--gpu_idx', default=None, type=int,
+    parser.add_argument('--gpu_idx', default=0, type=int,
                         help='GPU index to use.')
 
     parser.add_argument('--num_samples', type=int, default=None,
@@ -187,119 +187,6 @@ def diff_fun(input, real_corners, P, pred_depth, dim, rot):
     # return diff.flatten()
 
 
-def gen_position(kps,dim,rot,meta,const,x):
-    b=kps.size(0)
-    c=kps.size(1)
-    # opinv=meta['trans_output_inv']
-    calib=meta['calib']
-
-    # opinv = opinv.unsqueeze(1)
-    # opinv = opinv.expand(b, c, -1, -1).contiguous().view(-1, 2, 3).float()
-    kps = kps.view(b, c, -1, 2).permute(0, 1, 3, 2)
-
-    # hom = torch.ones(b, c, 1, 9).cuda()
-    # kps = torch.cat((kps, hom), dim=2).view(-1, 3, 9)
-    # kps = torch.bmm(opinv, kps).view(b, c, 2, 9)
-    kps = kps.view(b, c, 2, 8)
-
-    kps = kps.permute(0, 1, 3, 2).contiguous().view(b, c, -1)  # 16.32,18
-    si = torch.zeros_like(kps[:, :, 0:1]) + calib[:, 0:1, 0:1]
-    alpha_idx = rot[:, :, 1] > rot[:, :, 5]
-    alpha_idx = alpha_idx.float()
-    alpha1 = torch.atan(rot[:, :, 2] / rot[:, :, 3]) + (-0.5 * np.pi)
-    alpha2 = torch.atan(rot[:, :, 6] / rot[:, :, 7]) + (0.5 * np.pi)
-    alpna_pre = alpha1 * alpha_idx + alpha2 * (1 - alpha_idx)
-    alpna_pre = alpna_pre.unsqueeze(2)
-    # alpna_pre=rot_gt
-
-    # rot_y = alpna_pre + torch.atan2(kps[:, :, 16:17] - calib[:, 0:1, 2:3], si)
-    rot_y = alpna_pre + torch.atan2(x - calib[:, 0:1, 2:3], si)
-    rot_y[rot_y > np.pi] = rot_y[rot_y > np.pi] - 2 * np.pi
-    rot_y[rot_y < - np.pi] = rot_y[rot_y < - np.pi] + 2 * np.pi
-
-    calib = calib.unsqueeze(1)
-    calib = calib.expand(b, c, -1, -1).contiguous()
-
-    # kpoint = kps[:, :, :16]
-    kpoint = kps
-
-    f = calib[:, :, 0, 0].unsqueeze(2)
-    f = f.expand_as(kpoint)
-    cx, cy = calib[:, :, 0, 2].unsqueeze(2), calib[:, :, 1, 2].unsqueeze(2)
-    cxy = torch.cat((cx, cy), dim=2)
-    cxy = cxy.repeat(1, 1, 8)  # b,c,16
-    kp_norm = (kpoint - cxy) / f
-
-    l = dim[:, :, 2:3]
-    h = dim[:, :, 0:1]
-    w = dim[:, :, 1:2]
-    cosori = torch.cos(rot_y)
-    sinori = torch.sin(rot_y)
-
-    B = torch.zeros_like(kpoint)
-    C = torch.zeros_like(kpoint)
-
-    kp = kp_norm.unsqueeze(3)  # b,c,16,1
-    const = const.expand(b, c, -1, -1)
-    A = torch.cat([const, kp], dim=3)
-
-    B[:, :, 0:1] = l * 0.5 * cosori + w * 0.5 * sinori
-    B[:, :, 1:2] = h * 0.5
-    B[:, :, 2:3] = l * 0.5 * cosori - w * 0.5 * sinori
-    B[:, :, 3:4] = h * 0.5
-    B[:, :, 4:5] = -l * 0.5 * cosori - w * 0.5 * sinori
-    B[:, :, 5:6] = h * 0.5
-    B[:, :, 6:7] = -l * 0.5 * cosori + w * 0.5 * sinori
-    B[:, :, 7:8] = h * 0.5
-    B[:, :, 8:9] = l * 0.5 * cosori + w * 0.5 * sinori
-    B[:, :, 9:10] = -h * 0.5
-    B[:, :, 10:11] = l * 0.5 * cosori - w * 0.5 * sinori
-    B[:, :, 11:12] = -h * 0.5
-    B[:, :, 12:13] = -l * 0.5 * cosori - w * 0.5 * sinori
-    B[:, :, 13:14] = -h * 0.5
-    B[:, :, 14:15] = -l * 0.5 * cosori + w * 0.5 * sinori
-    B[:, :, 15:16] = -h * 0.5
-
-    C[:, :, 0:1] = -l * 0.5 * sinori + w * 0.5 * cosori
-    C[:, :, 1:2] = -l * 0.5 * sinori + w * 0.5 * cosori
-    C[:, :, 2:3] = -l * 0.5 * sinori - w * 0.5 * cosori
-    C[:, :, 3:4] = -l * 0.5 * sinori - w * 0.5 * cosori
-    C[:, :, 4:5] = l * 0.5 * sinori - w * 0.5 * cosori
-    C[:, :, 5:6] = l * 0.5 * sinori - w * 0.5 * cosori
-    C[:, :, 6:7] = l * 0.5 * sinori + w * 0.5 * cosori
-    C[:, :, 7:8] = l * 0.5 * sinori + w * 0.5 * cosori
-    C[:, :, 8:9] = -l * 0.5 * sinori + w * 0.5 * cosori
-    C[:, :, 9:10] = -l * 0.5 * sinori + w * 0.5 * cosori
-    C[:, :, 10:11] = -l * 0.5 * sinori - w * 0.5 * cosori
-    C[:, :, 11:12] = -l * 0.5 * sinori - w * 0.5 * cosori
-    C[:, :, 12:13] = l * 0.5 * sinori - w * 0.5 * cosori
-    C[:, :, 13:14] = l * 0.5 * sinori - w * 0.5 * cosori
-    C[:, :, 14:15] = l * 0.5 * sinori + w * 0.5 * cosori
-    C[:, :, 15:16] = l * 0.5 * sinori + w * 0.5 * cosori
-
-    B = B - kp_norm * C
-
-    # A=A*kps_mask1
-
-    AT = A.permute(0, 1, 3, 2)
-    AT = AT.view(b * c, 3, 16)
-    A = A.view(b * c, 16, 3)
-    B = B.view(b * c, 16, 1).float()
-    # mask = mask.unsqueeze(2)
-
-    pinv = torch.bmm(AT, A)
-    pinv = torch.inverse(pinv)  # b*c 3 3
-
-
-
-    pinv = torch.bmm(pinv, AT)
-    pinv = torch.bmm(pinv, B)
-    pinv = pinv.view(b, c, 3, 1).squeeze(3)
-
-    #pinv[:, :, 1] = pinv[:, :, 1] + dim[:, :, 0] / 2
-    return pinv,rot_y,kps
-
-
 if __name__ == '__main__':
     configs = parse_test_configs()
 
@@ -338,13 +225,11 @@ if __name__ == '__main__':
             detections = detections.cpu().numpy()
             detections = post_processing_2d(detections, configs.num_classes, configs.down_ratio)
 
-            # position, rot_y, kps_inv = gen_position(kps, dim, rot, meta, const)
-
             detections = get_final_pred(detections[0], configs.num_classes, configs.peak_thresh)
             P2 = metadatas['calib'].squeeze().numpy()
             pad_size = metadatas['pad_size'].numpy().flatten()
             # print(pad_size)
-            print(metadatas['id'])
+            # print(metadatas['id'])
             output = []
 
             for j in range(configs.num_classes):
@@ -355,16 +240,10 @@ if __name__ == '__main__':
                         _x, _y, _wh, _bbox, _ver_coor = int(det[1]), int(det[2]), det[3:5], det[5:9], det[9:25]
                         _rot, _depth, _dim, rots = det[25], det[26], det[36:39], det[26:34]
                         # print(_dim)
+                        # print(_depth)
                         # print(_rot)
                         bbox = _bbox
                         _bbox = np.array(_bbox, dtype=np.int)
-                        # print(_ver_coor)
-                        # print(_bbox)
-                        # position, rot_y, kps_inv = gen_position(torch.tensor(_ver_coor).unsqueeze(0).unsqueeze(0), torch.tensor(_dim).unsqueeze(0).unsqueeze(0)
-                        #                                         , torch.tensor(rots).unsqueeze(0).unsqueeze(0), metadatas, const, torch.tensor(_x).unsqueeze(0).unsqueeze(0))
-                        # print(position)
-                        # print(rot_y)
-                        # print(kps_inv)
 
                         pred_vertices = _ver_coor.copy()
                         pred_vertices = pred_vertices.reshape((8, 2))
@@ -375,10 +254,15 @@ if __name__ == '__main__':
                         bbox[[0, 2]] -= pad_size[0]
                         bbox[[1, 3]] -= pad_size[1]
 
+                        # opt_position, _ = opt(P2, pred_vertices, [3.87, 1.64, _depth], _dim, _rot)
+                        # print(opt_position)
+
                         new_diff_fun = lambda a: diff_fun(a, pred_vertices, P2, _depth, _dim, _rot)
-                        lower = np.array([-100, -100, -100, -100, -100, _depth - 2, -4])
-                        upper = np.array([100, 100, 100, 100, 100, _depth + 2, 4])
-                        x0 = np.array([1.42, 1.58, 3.48, 3.87, 1.64, _depth, -1.83])
+                        lower = np.array([0.76, 0.3, 0.2, -44.03, -2.14, -3.55, -3.14])
+                        upper = np.array([4.2, 3.01, 35.24, 40.06, 5.93, 146.85, 3.14])
+                        # lower = np.array([_dim[0] - 1, _dim[1] - 1, _dim[2] - 2, -44.03, -2.14, _depth - 10, -3.14])
+                        # upper = np.array([_dim[0] + 1, _dim[1] + 1, _dim[2] + 2, 40.06, 5.93, _depth + 10, 3.14])
+                        x0 = np.array([_dim[0], _dim[1], _dim[2], 0.0, 1.64, _depth, -1.83])
 
                         res_1 = least_squares(new_diff_fun, x0, bounds=(lower, upper))
                         # vertices, corners_3D, _ = np_computeBox3D(x0, P2)
@@ -390,11 +274,9 @@ if __name__ == '__main__':
                         # print(pred_vertices)
 
                         value_3d = res_1.x
-                        # print(_rot)
-                        # print(_dim)
-                        # print(_depth)
-                        print(value_3d)
-                        print(res_1.cost)
+                        # print(value_3d)
+                        # print(value_3d)
+                        # print(res_1.cost)
                         # ver, _, _ = np_computeBox3D(value_3d, P2)
                         # print(ver)
                         if j == 0:
@@ -403,11 +285,11 @@ if __name__ == '__main__':
                             cls = 'Car'
                         else:
                             cls = 'Cyclist'
-                        output_list = [cls, 0.00, 0, 0.00]
+                        output_list = [cls, -1, -1, -1]
                         output_list += bbox.tolist()
                         output_list += value_3d.tolist()
                         output_list.append(_score.item())
-                        print(output_list)
+                        # print(output_list)
                         output_list = ' '.join([str(x) for x in output_list])
                         output_list += '\n'
                         output.append(output_list)

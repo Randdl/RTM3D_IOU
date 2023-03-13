@@ -1,3 +1,13 @@
+# Changes
+We incorporate PIoU loss into src.losses.losses.py.
+
+To use only L1 loss, delete "l_vercooriou * self.weight_vercoor" in line 268 of losses.py and line 276.
+
+Use test.py to generate submission format of results.
+
+configs for L1 and L1+PIoU loss are in configs/.
+
+
 # RTM3D-PyTorch
 
 [![python-image]][python-url]

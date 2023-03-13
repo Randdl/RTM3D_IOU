@@ -109,16 +109,6 @@ class Vertexes_Coor_IoULoss(nn.Module):
 
     def forward(self, output, mask, ind, target):
         pred = _transpose_and_gather_feat(output, ind)
-        # mask_l1 = mask.float()
-        # l1_loss = F.l1_loss(pred * mask_l1, target * mask_l1, size_average=False)
-        # l1_loss = l1_loss / (mask.sum() + 1e-4)
-        # print(mask[:, 0:2, :])
-        # print(target[:, 0:2, :])
-
-        # mask = mask == 1
-        # mask = mask.all(dim=2)
-        # pred = pred[mask, ::]
-        # target = target[mask, ::]
 
         device = output.device
         displacement = torch.tensor([[-10, 10], [10, 10], [10, -10], [-10, -10]], device=device)
@@ -148,24 +138,13 @@ class Vertexes_Coor_IoULoss(nn.Module):
         tg_front = tg_front[mask_front, ::]
         back = back[mask_back, ::]
         tg_back = tg_back[mask_back, ::]
-        
-        if front.shape[0] == 0 or back.shape[0] == 0:
-            loss = torch.tensor([0], device=front.get_device())
-            return loss
 
         if front.shape[0] == 0 or back.shape[0] == 0:
             loss = torch.tensor([0], device=front.get_device())
             return loss
         loss = batch_poly_diou_loss(front, tg_front, a=0).sum() \
                + batch_poly_diou_loss(back, tg_back, a=0).sum()
-        loss = loss / (mask.sum() / 4 + 1e-4)
-
-        # l1_loss = F.l1_loss(front, tg_front, size_average=False) \
-        #           + F.l1_loss(back, tg_back, size_average=False)
-        # l1_loss = l1_loss / (mask.sum() * 16 + 1e-4)
-        # print("iou:", loss, "; l1:", l1_loss)
-        # print(loss)
-        # print(l1_loss)
+        loss = loss / (mask.sum() + 1e-4) * 32
 
         return loss
 
@@ -244,7 +223,7 @@ class Compute_Loss(nn.Module):
         self.l2_loss = L2Loss()
         self.rot_loss = BinRotLoss()
         self.weight_hm_mc, self.weight_hm_ver, self.weight_dim, self.weight_rot, self.weight_depth = 1., 1., 1., 0.5, 0.1
-        self.weight_vercoor, self.weight_cenoff, self.weight_veroff, self.weight_wh = 1., 0.5, 0.5, 0.5
+        self.weight_vercoor, self.weight_cenoff, self.weight_veroff, self.weight_wh = 0.5, 0.5, 0.5, 0.5
         self.mean_dim = torch.tensor([1.53, 1.62, 3.89], device=device, dtype=torch.float).view(1, 1, 3)
         self.std_dim = torch.tensor([0.13, 0.1, 0.41], device=device, dtype=torch.float).view(1, 1, 3)
 
